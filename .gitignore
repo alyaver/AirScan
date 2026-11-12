@@ -221,3 +221,11 @@ __marimo__/
 
 # .md
 /docs/current-development-baseline.md
+
+# Node.js frontend dependencies and generated assets
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+
+node_modules/
+**/node_modules/
