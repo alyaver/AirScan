@@ -10,6 +10,7 @@ def test_get_settings_uses_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
         "AIRSCAN_HOST",
         "AIRSCAN_PORT",
         "AIRSCAN_SERIAL_BAUD_RATE",
+        "AIRSCAN_SERIAL_PORT",
         "AIRSCAN_DATA_DIR",
     ):
         monkeypatch.delenv(variable, raising=False)
@@ -19,6 +20,7 @@ def test_get_settings_uses_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     assert settings.host == DEFAULT_HOST
     assert settings.port == DEFAULT_PORT
     assert settings.serial_baud_rate == DEFAULT_SERIAL_BAUD_RATE
+    assert settings.serial_port is None
     assert settings.data_dir.name == "data"
     assert settings.data_dir.parent.name == "AirScan"
 
@@ -29,6 +31,7 @@ def test_get_settings_reads_valid_environment_values(
     monkeypatch.setenv("AIRSCAN_HOST", "localhost")
     monkeypatch.setenv("AIRSCAN_PORT", "8123")
     monkeypatch.setenv("AIRSCAN_SERIAL_BAUD_RATE", "230400")
+    monkeypatch.setenv("AIRSCAN_SERIAL_PORT", "COM7")
     monkeypatch.setenv("AIRSCAN_DATA_DIR", str(tmp_path / "airscan-data"))
 
     settings = get_settings()
@@ -36,6 +39,7 @@ def test_get_settings_reads_valid_environment_values(
     assert settings.host == "localhost"
     assert settings.port == 8123
     assert settings.serial_baud_rate == 230400
+    assert settings.serial_port == "COM7"
     assert settings.data_dir == tmp_path / "airscan-data"
 
 

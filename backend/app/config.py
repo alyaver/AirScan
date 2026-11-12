@@ -49,6 +49,7 @@ class Settings:
     host: str
     port: int
     serial_baud_rate: int
+    serial_port: str | None
     data_dir: Path
 
 
@@ -65,6 +66,7 @@ def get_settings() -> Settings:
         if data_dir_value
         else _repository_root() / "data"
     )
+    serial_port = os.getenv("AIRSCAN_SERIAL_PORT", "").strip() or None
 
     return Settings(
         host=host,
@@ -72,5 +74,6 @@ def get_settings() -> Settings:
         serial_baud_rate=_read_baud_rate(
             os.getenv("AIRSCAN_SERIAL_BAUD_RATE", str(DEFAULT_SERIAL_BAUD_RATE))
         ),
+        serial_port=serial_port,
         data_dir=data_dir,
     )
