@@ -12,6 +12,7 @@ def test_health_endpoint_reports_available_backend() -> None:
             host="127.0.0.1",
             port=8000,
             serial_baud_rate=115200,
+            serial_port=None,
             data_dir=Path("data"),
         )
     )
