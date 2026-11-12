@@ -47,6 +47,7 @@ class SerialPortManager:
         port_lister: Callable[[], Iterable[Any]] = list_ports.comports,
         serial_factory: Callable[..., Any] = serial.Serial,
         line_handler: Callable[[str], None] | None = None,
+        lifecycle_handler: Callable[[str, str | None, Exception | None], None] | None = None,
         reader_factory: Callable[
             [Any, Callable[[str], None], Callable[[Exception], None]], SerialLineReader
         ] = SerialLineReader,
@@ -56,6 +57,7 @@ class SerialPortManager:
         self._port_lister = port_lister
         self._serial_factory = serial_factory
         self._line_handler = line_handler or (lambda _: None)
+        self._lifecycle_handler = lifecycle_handler or (lambda _event, _port, _error: None)
         self._reader_factory = reader_factory
         self._connection: Any | None = None
         self._reader: SerialLineReader | None = None
@@ -100,6 +102,7 @@ class SerialPortManager:
 
             self._close_unlocked()
             self._selected_port = requested_port
+            self._notify_lifecycle("connecting")
 
             try:
                 self._connection = self._serial_factory(
@@ -109,6 +112,7 @@ class SerialPortManager:
                 )
             except (serial.SerialException, OSError) as error:
                 self._connection = None
+                self._notify_lifecycle("error", error)
                 raise SerialConnectionError(
                     f"Could not open serial port {requested_port}: {error}"
                 ) from error
@@ -122,7 +126,19 @@ class SerialPortManager:
                 ),
             )
             self._reader.start()
+            self._notify_lifecycle("connected")
             return self.connection_details()
+
+    def reconnect(self) -> SerialConnectionDetails:
+        """Retry opening the retained selected port after a controlled failure."""
+
+        with self._lock:
+            if not self._selected_port:
+                raise SerialConnectionError("Select a serial port before reconnecting.")
+            requested_port = self._selected_port
+            self._notify_lifecycle("reconnecting")
+
+        return self.connect(requested_port)
 
     def close(self) -> SerialConnectionDetails:
         """Close the open port while retaining the user-selected port."""
@@ -149,8 +165,9 @@ class SerialPortManager:
         if self._connection is not None:
             self._connection.close()
         self._connection = None
+        self._notify_lifecycle("disconnected")
 
-    def _handle_reader_error(self, connection: Any, _: Exception) -> None:
+    def _handle_reader_error(self, connection: Any, error: Exception) -> None:
         """Mark a disconnected or failed port unavailable without crashing the backend."""
 
         with self._lock:
@@ -162,3 +179,11 @@ class SerialPortManager:
             except Exception:
                 pass
             self._connection = None
+            self._notify_lifecycle("error", error)
+
+    def _notify_lifecycle(self, event: str, error: Exception | None = None) -> None:
+        try:
+            self._lifecycle_handler(event, self._selected_port, error)
+        except Exception:
+            # Observer failures must not prevent safe serial-port ownership.
+            pass

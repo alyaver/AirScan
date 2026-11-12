@@ -209,3 +209,22 @@ def test_reader_disconnect_marks_the_serial_connection_closed() -> None:
 
     assert manager.connection_details().connected is False
     assert connection.close_calls == 1
+
+
+def test_reconnect_reopens_the_retained_selected_port() -> None:
+    connections: list[FakeConnection] = []
+
+    def serial_factory(**_: object) -> FakeConnection:
+        connection = FakeConnection()
+        connections.append(connection)
+        return connection
+
+    manager = SerialPortManager(baud_rate=115200, serial_factory=serial_factory)
+    manager.connect("COM7")
+    manager.close()
+
+    details = manager.reconnect()
+
+    assert details.selected_port == "COM7"
+    assert details.connected is True
+    assert len(connections) == 2
