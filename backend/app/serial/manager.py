@@ -9,6 +9,8 @@ from typing import Any, Callable, Iterable
 import serial
 from serial.tools import list_ports
 
+from app.serial.reader import SerialLineReader, SerialReaderStatistics
+
 
 @dataclass(frozen=True)
 class SerialPortDetails:
@@ -44,12 +46,19 @@ class SerialPortManager:
         selected_port: str | None = None,
         port_lister: Callable[[], Iterable[Any]] = list_ports.comports,
         serial_factory: Callable[..., Any] = serial.Serial,
+        line_handler: Callable[[str], None] | None = None,
+        reader_factory: Callable[
+            [Any, Callable[[str], None], Callable[[Exception], None]], SerialLineReader
+        ] = SerialLineReader,
     ) -> None:
         self._baud_rate = baud_rate
         self._selected_port = selected_port
         self._port_lister = port_lister
         self._serial_factory = serial_factory
+        self._line_handler = line_handler or (lambda _: None)
+        self._reader_factory = reader_factory
         self._connection: Any | None = None
+        self._reader: SerialLineReader | None = None
         self._lock = RLock()
 
     def list_ports(self) -> list[SerialPortDetails]:
@@ -104,6 +113,15 @@ class SerialPortManager:
                     f"Could not open serial port {requested_port}: {error}"
                 ) from error
 
+            self._reader = self._reader_factory(
+                self._connection,
+                self._line_handler,
+                lambda error, connection=self._connection: self._handle_reader_error(
+                    connection,
+                    error,
+                ),
+            )
+            self._reader.start()
             return self.connection_details()
 
     def close(self) -> SerialConnectionDetails:
@@ -113,12 +131,34 @@ class SerialPortManager:
             self._close_unlocked()
             return self.connection_details()
 
+    def reader_statistics(self) -> SerialReaderStatistics | None:
+        """Return diagnostics for the active or most recently stopped reader."""
+
+        with self._lock:
+            return self._reader.statistics() if self._reader is not None else None
+
     def _is_connection_open(self) -> bool:
         return self._connection is not None and bool(
             getattr(self._connection, "is_open", False)
         )
 
     def _close_unlocked(self) -> None:
+        if self._reader is not None:
+            self._reader.stop()
+            self._reader = None
         if self._connection is not None:
             self._connection.close()
         self._connection = None
+
+    def _handle_reader_error(self, connection: Any, _: Exception) -> None:
+        """Mark a disconnected or failed port unavailable without crashing the backend."""
+
+        with self._lock:
+            if self._connection is not connection:
+                return
+
+            try:
+                connection.close()
+            except Exception:
+                pass
+            self._connection = None
