@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import sleep
 
 from fastapi.testclient import TestClient
 
@@ -27,6 +28,9 @@ class FakeConnection:
     def close(self) -> None:
         self.close_calls += 1
         self.is_open = False
+
+    def read_until(self, _: bytes) -> bytes:
+        return b""
 
 
 def build_client(manager: SerialPortManager) -> TestClient:
@@ -157,3 +161,51 @@ def test_disconnect_closes_the_port_and_keeps_the_selection() -> None:
         "connected": False,
         "baud_rate": 115200,
     }
+
+
+def test_connect_starts_the_reader_and_forwards_complete_lines() -> None:
+    class ReadableConnection(FakeConnection):
+        def __init__(self) -> None:
+            super().__init__()
+            self.chunks = [b'{"message_type":"heartbeat"', b'}\n']
+
+        def read_until(self, _: bytes) -> bytes:
+            return self.chunks.pop(0) if self.chunks else b""
+
+    lines: list[str] = []
+    connection = ReadableConnection()
+    manager = SerialPortManager(
+        baud_rate=115200,
+        serial_factory=lambda **_: connection,
+        line_handler=lines.append,
+    )
+
+    manager.connect("COM7")
+    for _ in range(20):
+        if lines:
+            break
+        sleep(0.01)
+    manager.close()
+
+    assert lines == ['{"message_type":"heartbeat"}']
+
+
+def test_reader_disconnect_marks_the_serial_connection_closed() -> None:
+    class DisconnectingConnection(FakeConnection):
+        def read_until(self, _: bytes) -> bytes:
+            raise OSError("device disconnected")
+
+    connection = DisconnectingConnection()
+    manager = SerialPortManager(
+        baud_rate=115200,
+        serial_factory=lambda **_: connection,
+    )
+
+    manager.connect("COM7")
+    for _ in range(20):
+        if not manager.connection_details().connected:
+            break
+        sleep(0.01)
+
+    assert manager.connection_details().connected is False
+    assert connection.close_calls == 1

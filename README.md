@@ -42,4 +42,5 @@ Set `AIRSCAN_SERIAL_PORT` to preselect a Windows port such as `COM7`, or choose
 and open one through `PUT /api/serial/connection` with `{"port":"COM7"}`.
 The selected port uses `AIRSCAN_SERIAL_BAUD_RATE`, which defaults to `115200`.
 This task opens and owns one port only; reading the firmware protocol begins in
-the next serial-reader task.
+the backend serial reader. Protocol validation and normalization are the next
+serial task.

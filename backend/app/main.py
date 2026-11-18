@@ -12,6 +12,7 @@ from app.serial.manager import (
     SerialPortDetails,
     SerialPortManager,
 )
+from app.serial.protocol import ProtocolParser
 
 
 class HealthResponse(BaseModel):
@@ -57,6 +58,7 @@ class SerialConnectionRequest(BaseModel):
 def create_app(
     settings: Settings | None = None,
     serial_manager: SerialPortManager | None = None,
+    protocol_parser: ProtocolParser | None = None,
 ) -> FastAPI:
     """Create the local AirScan API application."""
 
@@ -68,9 +70,11 @@ def create_app(
         redoc_url=None,
     )
     application.state.settings = resolved_settings
+    application.state.protocol_parser = protocol_parser or ProtocolParser()
     application.state.serial_manager = serial_manager or SerialPortManager(
         baud_rate=resolved_settings.serial_baud_rate,
         selected_port=resolved_settings.serial_port,
+        line_handler=application.state.protocol_parser.parse_line,
     )
 
     @application.get("/api/health", response_model=HealthResponse, tags=["system"])
@@ -114,7 +118,7 @@ def create_app(
         tags=["serial"],
     )
     def connect_serial_port(request: SerialConnectionRequest) -> SerialConnectionResponse:
-        """Select and open one serial port for a later dedicated reader."""
+        """Select, open, and begin reading one serial port."""
 
         manager: SerialPortManager = application.state.serial_manager
         try:
