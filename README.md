@@ -65,4 +65,13 @@ It never waits for a new scan and does not create data files.
 `connection_state` and `scan_update` events. Each browser has a bounded event
 queue, so a slow or disconnected browser cannot block serial ingestion or other
 connected clients; it receives the newest available snapshot after it catches
-up. The React WebSocket client is scheduled for the dashboard tasks.
+up.
+
+The dashboard connection component consumes `WS /api/live` and displays the
+ESP32 USB serial/device state, selected port, and last message/scan times. It
+explicitly does not represent Wi-Fi access-point association.
+
+The dashboard also shows the networks from the latest completed scan, with
+SSID, BSSID, RSSI, channel, encryption, and last-observed time. It keeps
+different BSSIDs separate even when they advertise the same SSID, labels empty
+SSIDs as hidden networks, and can sort the latest scan by RSSI or SSID.

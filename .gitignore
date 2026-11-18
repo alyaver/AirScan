@@ -221,6 +221,7 @@ __marimo__/
 
 # .md
 /docs/current-development-baseline.md
+**/implementation-plan.md
 
 # Node.js frontend dependencies and generated assets
 frontend/node_modules/
