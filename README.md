@@ -44,3 +44,25 @@ The selected port uses `AIRSCAN_SERIAL_BAUD_RATE`, which defaults to `115200`.
 This task opens and owns one port only; reading the firmware protocol begins in
 the backend serial reader. Protocol validation and normalization are the next
 serial task.
+
+The current device state is available from `GET /api/serial/state`. It reports
+USB serial/device activity such as `CONNECTED_IDLE` or `CONNECTED_SCANNING`; it
+does not claim that the ESP32 is associated with a Wi-Fi network. After an
+unexpected serial error, the selected port is retained and can be retried with
+`POST /api/serial/reconnect`.
+
+`GET /api/device/status` adds parser and reader diagnostics to this state, and
+`GET /api/scans/latest` returns the latest accepted terminal scan (normalized
+network observations or its terminal scan error). These are process-memory
+snapshots only; recording/session history is not implemented yet.
+
+For the live dashboard, `GET /api/live` returns an immediate snapshot of the
+connection state, latest network observations, most recent scan time, accepted
+terminal scan count since the current serial connection, and any current error.
+It never waits for a new scan and does not create data files.
+
+`WS /api/live` sends the same current snapshot immediately, then broadcasts
+`connection_state` and `scan_update` events. Each browser has a bounded event
+queue, so a slow or disconnected browser cannot block serial ingestion or other
+connected clients; it receives the newest available snapshot after it catches
+up. The React WebSocket client is scheduled for the dashboard tasks.

@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from threading import Lock
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Annotated, Any, Callable, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -112,7 +112,10 @@ class ProtocolParserStatistics:
 class ProtocolParser:
     """Parse, validate, normalize, and sequence version-1 serial messages."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        message_handler: Callable[[ProtocolMessage], None] | None = None,
+    ) -> None:
         self._accepted_messages = 0
         self._malformed_json = 0
         self._invalid_messages = 0
@@ -121,6 +124,7 @@ class ProtocolParser:
         self._duplicate_scan_ids = 0
         self._last_terminal_scan_id: int | None = None
         self._latest_message: ProtocolMessage | None = None
+        self._message_handler = message_handler or (lambda _: None)
         self._lock = Lock()
 
     def parse_line(self, line: str) -> ProtocolMessage | None:
@@ -172,7 +176,13 @@ class ProtocolParser:
 
             self._accepted_messages += 1
             self._latest_message = message
-            return message
+
+        try:
+            self._message_handler(message)
+        except Exception:
+            # State/reporting observers must never terminate serial ingestion.
+            pass
+        return message
 
     def statistics(self) -> ProtocolParserStatistics:
         """Return a snapshot of parser diagnostics."""
