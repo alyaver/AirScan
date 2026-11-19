@@ -75,3 +75,7 @@ The dashboard also shows the networks from the latest completed scan, with
 SSID, BSSID, RSSI, channel, encryption, and last-observed time. It keeps
 different BSSIDs separate even when they advertise the same SSID, labels empty
 SSIDs as hidden networks, and can sort the latest scan by RSSI or SSID.
+
+Live monitoring and recording are separate. Recording is currently inactive and
+not implemented: receiving or viewing live scans does not create the configured
+data directory, a master dataset, or session files.

@@ -1,5 +1,6 @@
 import { ConnectionStatus } from "./components/ConnectionStatus.jsx";
 import { NetworkTable } from "./components/NetworkTable.jsx";
+import { RecordingStatus } from "./components/RecordingStatus.jsx";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <ConnectionStatus />
       </section>
 
+      <RecordingStatus />
       <NetworkTable />
     </main>
   );
