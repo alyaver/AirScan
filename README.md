@@ -14,12 +14,21 @@ planned development boundary, see
 The version-1 firmware-to-backend serial contract is defined in
 [docs/serial-protocol.md](docs/serial-protocol.md).
 
+The version-1 backend recording schemas are defined in
+[docs/storage-schema.md](docs/storage-schema.md). These schemas do not enable
+recording or persistent storage by themselves.
+
 ## Local application
 
-The repository includes a FastAPI backend with a local health endpoint and a
-React dashboard that displays that endpoint's connection status through the
-Vite development proxy. Serial communication, recording, storage, and live
-Wi-Fi scan data are planned for later tasks.
+The repository includes a FastAPI backend and React dashboard for local live
+monitoring. The backend receives version-1 NDJSON scan messages from one ESP32
+USB serial port, keeps the current connection and latest-scan state in memory,
+and publishes it through REST and WebSocket endpoints. The dashboard receives
+live updates through the Vite WebSocket proxy and displays serial/device state,
+recording state, and nearby Wi-Fi networks.
+
+Recording and persistent storage are not implemented. Live monitoring never
+creates scan-data files while recording is inactive.
 
 ## Run the local application
 
@@ -35,15 +44,19 @@ npm run dev
 This starts the FastAPI backend at `http://127.0.0.1:8000` and the Vite
 frontend at `http://127.0.0.1:5173`. Press `Ctrl+C` once to stop both servers.
 
+The frontend server uses port `5173` with strict port binding. If startup
+reports that the port is already in use, stop the existing Vite process before
+running `npm run dev` again. The dashboard WebSocket connects to `/api/live`,
+which Vite proxies to the backend at `127.0.0.1:8000`.
+
 ## Serial-port configuration
 
 The backend lists locally detected serial devices at `GET /api/serial/ports`.
 Set `AIRSCAN_SERIAL_PORT` to preselect a Windows port such as `COM7`, or choose
 and open one through `PUT /api/serial/connection` with `{"port":"COM7"}`.
 The selected port uses `AIRSCAN_SERIAL_BAUD_RATE`, which defaults to `115200`.
-This task opens and owns one port only; reading the firmware protocol begins in
-the backend serial reader. Protocol validation and normalization are the next
-serial task.
+The backend opens and owns one port only. Its serial reader validates and
+normalizes accepted version-1 protocol messages before publishing live state.
 
 The current device state is available from `GET /api/serial/state`. It reports
 USB serial/device activity such as `CONNECTED_IDLE` or `CONNECTED_SCANNING`; it
@@ -65,4 +78,23 @@ It never waits for a new scan and does not create data files.
 `connection_state` and `scan_update` events. Each browser has a bounded event
 queue, so a slow or disconnected browser cannot block serial ingestion or other
 connected clients; it receives the newest available snapshot after it catches
-up. The React WebSocket client is scheduled for the dashboard tasks.
+up.
+
+The dashboard connection component consumes `WS /api/live` and displays the
+ESP32 USB serial/device state, selected port, and last message/scan times. It
+explicitly does not represent Wi-Fi access-point association.
+
+The dashboard also shows the networks from the latest completed scan, with
+SSID, BSSID, RSSI, channel, encryption, and last-observed time. It keeps
+different BSSIDs separate even when they advertise the same SSID, labels empty
+SSIDs as hidden networks, and can sort the latest scan by RSSI or SSID.
+
+Live monitoring and recording are separate. Recording is currently inactive and
+not implemented: receiving or viewing live scans does not create the configured
+data directory, a master dataset, or session files.
+
+## Live-monitoring end-to-end checklist
+
+For the physical Windows/ESP32 validation procedure, including connection-loss,
+browser WebSocket, scan-table, error-state, and no-persistence checks, see
+[docs/live-monitoring-checklist.md](docs/live-monitoring-checklist.md).
