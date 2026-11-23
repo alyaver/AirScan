@@ -10,15 +10,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.serial.protocol import NetworkObservation, ProtocolModel
+from app.storage.naming import SESSION_ID_PATTERN
 
 
 STORAGE_SCHEMA_VERSION = 1
 RecordType = Literal["scan"]
+SessionLabel = Literal["Police Observed", "Baseline", "Unknown"]
 SessionStatus = Literal["active", "completed", "interrupted", "recovered"]
 RecoveryState = Literal["pending", "recovered", "discarded"]
+SessionId = Annotated[str, Field(pattern=SESSION_ID_PATTERN)]
 
 
 class StorageModel(ProtocolModel):
@@ -54,8 +57,8 @@ class SessionMetadata(StorageModel):
     """Session-level metadata shared by temporary and finalized session files."""
 
     schema_version: Literal[STORAGE_SCHEMA_VERSION] = STORAGE_SCHEMA_VERSION
-    session_id: Annotated[str, Field(min_length=1)]
-    label: Annotated[str, Field(min_length=1)]
+    session_id: SessionId
+    label: SessionLabel
     notes: str = ""
     started_at: datetime
     ended_at: datetime | None = None
@@ -69,13 +72,30 @@ class SessionMetadata(StorageModel):
     def validate_session_timestamps(cls, value: datetime | None) -> datetime | None:
         return _require_utc_timestamp(value) if value is not None else None
 
+    @model_validator(mode="after")
+    def validate_session_lifecycle(self) -> SessionMetadata:
+        """Keep active and finalized metadata states unambiguous."""
+
+        if self.status == "active":
+            if self.ended_at is not None or self.duration_seconds is not None:
+                raise ValueError("Active sessions must not have an end timestamp or duration.")
+            return self
+
+        if self.ended_at is None or self.duration_seconds is None:
+            raise ValueError("Finalized sessions must have an end timestamp and duration.")
+        if self.ended_at < self.started_at:
+            raise ValueError("Session end timestamp must not precede its start timestamp.")
+        if self.duration_seconds != int((self.ended_at - self.started_at).total_seconds()):
+            raise ValueError("Session duration must equal the elapsed whole seconds.")
+        return self
+
 
 class MasterScanRecord(StorageModel):
     """One append-only master JSONL record for an accepted recorded scan."""
 
     record_type: RecordType = "scan"
     schema_version: Literal[STORAGE_SCHEMA_VERSION] = STORAGE_SCHEMA_VERSION
-    session_id: Annotated[str, Field(min_length=1)]
+    session_id: SessionId
     recorded_at: datetime
     scan_id: Annotated[int, Field(gt=0)]
     networks: list[NetworkObservation]
@@ -90,7 +110,7 @@ class RecoveryStatus(StorageModel):
     """Recovery state for a temporary recording session discovered on startup."""
 
     schema_version: Literal[STORAGE_SCHEMA_VERSION] = STORAGE_SCHEMA_VERSION
-    session_id: Annotated[str, Field(min_length=1)]
+    session_id: SessionId
     status: RecoveryState
     detected_at: datetime
     detail: str | None = None
