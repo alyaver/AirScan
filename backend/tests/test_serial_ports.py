@@ -105,6 +105,89 @@ def test_serial_connection_endpoint_opens_one_selected_port_only_once() -> None:
     assert len(connections) == 1
 
 
+def test_configured_serial_port_connects_on_backend_startup_and_closes_on_shutdown() -> None:
+    connection = FakeConnection()
+    manager = SerialPortManager(
+        baud_rate=115200,
+        serial_factory=lambda **_: connection,
+    )
+    application = create_app(
+        Settings(
+            host="127.0.0.1",
+            port=8000,
+            serial_baud_rate=115200,
+            serial_port="COM7",
+            data_dir=Path("data"),
+        ),
+        serial_manager=manager,
+    )
+
+    with TestClient(application) as client:
+        response = client.get("/api/serial/connection")
+
+        assert response.json() == {
+            "selected_port": "COM7",
+            "connected": True,
+            "baud_rate": 115200,
+        }
+
+    assert connection.close_calls == 1
+
+
+def test_startup_keeps_backend_available_when_configured_serial_port_cannot_open() -> None:
+    def serial_factory(**_: object) -> FakeConnection:
+        raise OSError("Access is denied.")
+
+    manager = SerialPortManager(baud_rate=115200, serial_factory=serial_factory)
+    application = create_app(
+        Settings(
+            host="127.0.0.1",
+            port=8000,
+            serial_baud_rate=115200,
+            serial_port="COM7",
+            data_dir=Path("data"),
+        ),
+        serial_manager=manager,
+    )
+
+    with TestClient(application) as client:
+        health_response = client.get("/api/health")
+        connection_response = client.get("/api/serial/connection")
+
+    assert health_response.status_code == 200
+    assert connection_response.json() == {
+        "selected_port": "COM7",
+        "connected": False,
+        "baud_rate": 115200,
+    }
+
+
+def test_startup_does_not_open_a_port_when_none_is_configured() -> None:
+    def serial_factory(**_: object) -> FakeConnection:
+        raise AssertionError("Startup must not auto-select a serial port.")
+
+    manager = SerialPortManager(baud_rate=115200, serial_factory=serial_factory)
+    application = create_app(
+        Settings(
+            host="127.0.0.1",
+            port=8000,
+            serial_baud_rate=115200,
+            serial_port=None,
+            data_dir=Path("data"),
+        ),
+        serial_manager=manager,
+    )
+
+    with TestClient(application) as client:
+        response = client.get("/api/serial/connection")
+
+    assert response.json() == {
+        "selected_port": None,
+        "connected": False,
+        "baud_rate": 115200,
+    }
+
+
 def test_selecting_another_port_closes_the_previous_connection() -> None:
     connections: list[FakeConnection] = []
 

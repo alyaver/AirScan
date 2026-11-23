@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime
 from queue import Empty
-from typing import Any
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
@@ -149,11 +150,31 @@ def create_app(
     """Create the local AirScan API application."""
 
     resolved_settings = settings or get_settings()
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        """Open only an explicitly configured port and always release it on exit."""
+
+        manager: SerialPortManager = application.state.serial_manager
+        if resolved_settings.serial_port:
+            try:
+                manager.connect(resolved_settings.serial_port)
+            except SerialConnectionError:
+                # The lifecycle tracker exposes the failure while the local API
+                # remains available for inspection or a later reconnect request.
+                pass
+
+        try:
+            yield
+        finally:
+            manager.close()
+
     application = FastAPI(
         title="AirScan Local Backend",
         version="0.1.0",
         docs_url="/docs",
         redoc_url=None,
+        lifespan=lifespan,
     )
     application.state.settings = resolved_settings
     application.state.connection_state = connection_state or ConnectionStateTracker()

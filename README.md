@@ -52,11 +52,24 @@ which Vite proxies to the backend at `127.0.0.1:8000`.
 ## Serial-port configuration
 
 The backend lists locally detected serial devices at `GET /api/serial/ports`.
-Set `AIRSCAN_SERIAL_PORT` to preselect a Windows port such as `COM7`, or choose
-and open one through `PUT /api/serial/connection` with `{"port":"COM7"}`.
+Set `AIRSCAN_SERIAL_PORT` to a Windows port such as `COM7` before running
+`npm run dev`; the backend then opens that explicitly configured port
+automatically at startup. For the current PowerShell session:
+
+```powershell
+$env:AIRSCAN_SERIAL_PORT = "COM7"
+npm run dev
+```
+
+If no port is configured, the backend remains available without claiming a
+device; choose and open one through `PUT /api/serial/connection` with
+`{"port":"COM7"}`. If a configured port is unavailable or currently held by
+another program, the backend remains running and reports the connection error.
 The selected port uses `AIRSCAN_SERIAL_BAUD_RATE`, which defaults to `115200`.
-The backend opens and owns one port only. Its serial reader validates and
-normalizes accepted version-1 protocol messages before publishing live state.
+The backend opens and owns one port only. Close PlatformIO Serial Monitor before
+starting AirScan because it cannot share the same COM port. Its serial reader
+validates and normalizes accepted version-1 protocol messages before publishing
+live state.
 
 The current device state is available from `GET /api/serial/state`. It reports
 USB serial/device activity such as `CONNECTED_IDLE` or `CONNECTED_SCANNING`; it
