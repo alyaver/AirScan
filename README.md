@@ -27,8 +27,9 @@ and publishes it through REST and WebSocket endpoints. The dashboard receives
 live updates through the Vite WebSocket proxy and displays serial/device state,
 recording state, and nearby Wi-Fi networks.
 
-Recording and persistent storage are not implemented. Live monitoring never
-creates scan-data files while recording is inactive.
+Recording controls are not implemented. The backend includes an opt-in master
+JSONL writer for a later recording workflow, but live monitoring never invokes
+it and does not create scan-data files.
 
 ## Run the local application
 

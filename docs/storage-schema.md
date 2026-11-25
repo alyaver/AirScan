@@ -120,6 +120,25 @@ an additional `.tmp` suffix:
 `master.jsonl` is the reserved future master-dataset filename. Naming helpers
 only return strings; they do not create the master or session files.
 
+## Master JSONL append contract
+
+`MasterJsonlWriter` is the explicit storage component for future recording
+workflows. It accepts only validated `MasterScanRecord` instances and appends
+their canonical JSON representation followed by one newline to
+`data/master.jsonl` (or the configured data directory).
+
+- Constructing the writer does not create a directory or file.
+- The data directory and `master.jsonl` are created only by the first accepted
+  `append` call.
+- Every append flushes and synchronizes the complete line before returning.
+- Existing master-file content is never rewritten by normal appends.
+- A writer instance rejects a repeated `(session_id, scan_id)` pair.
+- The writer is intentionally not connected to live scan processing yet;
+  running live monitoring alone still does not create scan-data files.
+
+Master-file recovery and validation of pre-existing duplicate lines are deferred
+to AIRSCAN-3.2.2.
+
 ## Recovery status
 
 `RecoveryStatus` is a schema-versioned record for temporary-session recovery:
