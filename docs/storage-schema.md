@@ -89,6 +89,25 @@ session files:
 
 Session files will pair this metadata with an array of `ScanObservation` values.
 
+## Temporary active session files
+
+`TemporarySessionWriter` is the explicit storage component for an active
+recording session. Given active `SessionMetadata`, it creates one recoverable
+file under `data/sessions/` using the documented `.json.tmp` filename format.
+The file is a complete JSON object with the metadata fields at the top level and
+an `observations` array of canonical `ScanObservation` values.
+
+The writer persists an empty active-session snapshot at construction. Each
+accepted append rewrites a complete replacement snapshot, flushes and
+synchronizes it, then replaces the active `.json.tmp` file. The snapshot updates
+`scan_count` and `unique_bssid_count` from the persisted observations. A
+duplicate scan ID is rejected for the active writer, and the existing temporary
+file remains unchanged.
+
+Temporary files are intentionally retained when the writer stops unexpectedly.
+No live-monitoring code constructs this writer yet, so running the application
+without a future recording workflow still creates no session files.
+
 ## Session identity and filenames
 
 The backend generates each session ID as a lowercase UUID4 hexadecimal value,
