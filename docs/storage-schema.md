@@ -136,8 +136,25 @@ their canonical JSON representation followed by one newline to
 - The writer is intentionally not connected to live scan processing yet;
   running live monitoring alone still does not create scan-data files.
 
-Master-file recovery and validation of pre-existing duplicate lines are deferred
-to AIRSCAN-3.2.2.
+Validation of pre-existing duplicate master records is deferred to a later
+consistency-reporting task.
+
+## Master JSONL integrity and recovery
+
+`inspect_master_jsonl` reads a master file without changing it. It validates
+every complete physical line as a `MasterScanRecord` and returns the count of
+valid records plus line-numbered issues for malformed or schema-invalid lines.
+
+An invalid final line that does not end with a newline is reported separately as
+`final_incomplete_line`, which represents a recoverable crash-truncation case.
+It is not treated as evidence that a prior complete record is invalid.
+
+`repair_master_jsonl` always writes to a separate destination and never modifies
+the source. It copies complete valid records to the repaired file and omits an
+incomplete final line. By default, it refuses to omit malformed complete lines;
+callers must explicitly set `allow_nonfinal_issues=True` after reviewing the
+integrity report. This preserves the original file as evidence and prevents
+silent loss of non-final malformed data.
 
 ## Recovery status
 

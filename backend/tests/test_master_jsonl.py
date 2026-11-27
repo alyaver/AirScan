@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from app.storage.jsonl import DuplicateMasterScanRecordError, MasterJsonlWriter
+from app.storage.jsonl import (
+    DuplicateMasterScanRecordError,
+    MasterJsonlIntegrityError,
+    MasterJsonlWriter,
+    inspect_master_jsonl,
+    repair_master_jsonl,
+)
 from app.storage.models import MasterScanRecord
 
 
@@ -104,3 +110,81 @@ def test_writer_rejects_values_other_than_validated_master_records(tmp_path: Pat
         writer.append(object())  # type: ignore[arg-type]
 
     assert writer.path.exists() is False
+
+
+def test_inspection_reports_a_clean_master_file_and_a_missing_master_file(tmp_path: Path) -> None:
+    missing_path = tmp_path / "missing" / "master.jsonl"
+    missing_report = inspect_master_jsonl(missing_path)
+
+    assert missing_report.exists is False
+    assert missing_report.is_clean is False
+    assert missing_report.valid_record_count == 0
+
+    writer = MasterJsonlWriter(tmp_path / "recording-data")
+    writer.append(build_record())
+    clean_report = inspect_master_jsonl(writer.path)
+
+    assert clean_report.is_clean is True
+    assert clean_report.valid_record_count == 1
+    assert clean_report.final_incomplete_line is False
+    assert clean_report.issues == ()
+
+
+def test_inspection_and_repair_handle_a_crash_truncated_final_line(tmp_path: Path) -> None:
+    source_path = tmp_path / "recording-data" / "master.jsonl"
+    source_path.parent.mkdir()
+    valid_line = build_record().model_dump_json().encode()
+    source_path.write_bytes(valid_line + b"\n{\"record_type\":\"scan\"")
+    repaired_path = tmp_path / "recovered" / "master.repaired.jsonl"
+
+    report = inspect_master_jsonl(source_path)
+    returned_report = repair_master_jsonl(source_path, repaired_path)
+
+    assert report.final_incomplete_line is True
+    assert report.valid_record_count == 1
+    assert report.issues == ()
+    assert returned_report == report
+    assert read_records(repaired_path) == [build_record()]
+    assert source_path.read_bytes() == valid_line + b"\n{\"record_type\":\"scan\""
+
+
+def test_inspection_reports_malformed_complete_lines_and_safe_repair_refuses_to_drop_them(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "recording-data" / "master.jsonl"
+    source_path.parent.mkdir()
+    first_record = build_record(scan_id=1)
+    second_record = build_record(scan_id=2)
+    source_path.write_text(
+        f"{first_record.model_dump_json()}\nnot json\n{second_record.model_dump_json()}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    repaired_path = tmp_path / "recovered" / "master.repaired.jsonl"
+
+    report = inspect_master_jsonl(source_path)
+
+    assert report.is_clean is False
+    assert report.valid_record_count == 2
+    assert report.final_incomplete_line is False
+    assert len(report.issues) == 1
+    assert report.issues[0].line_number == 2
+    with pytest.raises(MasterJsonlIntegrityError, match="Refusing"):
+        repair_master_jsonl(source_path, repaired_path)
+    assert repaired_path.exists() is False
+
+    repair_master_jsonl(source_path, repaired_path, allow_nonfinal_issues=True)
+
+    assert read_records(repaired_path) == [first_record, second_record]
+    assert source_path.read_text(encoding="utf-8") == (
+        f"{first_record.model_dump_json()}\nnot json\n{second_record.model_dump_json()}\n"
+    )
+
+
+def test_repair_rejects_replacing_its_source_file(tmp_path: Path) -> None:
+    source_path = tmp_path / "recording-data" / "master.jsonl"
+    source_path.parent.mkdir()
+    source_path.write_text(f"{build_record().model_dump_json()}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="differ"):
+        repair_master_jsonl(source_path, source_path)
