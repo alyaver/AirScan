@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from app.storage.models import ScanObservation, SessionMetadata
-from app.storage.sessions import DuplicateSessionScanError, TemporarySessionWriter
+from app.storage.sessions import (
+    DuplicateSessionScanError,
+    SessionAlreadyFinalizedError,
+    TemporarySessionWriter,
+)
 
 
 UTC_TIMESTAMP = datetime(2026, 11, 18, 18, 30, 5, 142000, tzinfo=timezone.utc)
@@ -130,3 +134,79 @@ def test_session_writer_requires_active_metadata_and_validated_observations(tmp_
     with pytest.raises(TypeError, match="ScanObservation"):
         writer.append(object())  # type: ignore[arg-type]
     assert read_session_payload(writer.path)["observations"] == []
+
+
+def test_finalize_empty_session_publishes_complete_json_and_removes_temporary_file(tmp_path: Path) -> None:
+    writer = TemporarySessionWriter(tmp_path / "recording-data", build_metadata())
+    temporary_path = writer.path
+    ended_at = datetime(2026, 11, 18, 18, 31, 10, tzinfo=timezone.utc)
+
+    finalized_path = writer.finalize(ended_at)
+
+    assert finalized_path == (
+        tmp_path
+        / "recording-data"
+        / "sessions"
+        / "2026-11-18_18-30-05_7f2a9c2183ce4fa79ebd7dbdc5f8e9a1.json"
+    )
+    assert temporary_path.exists() is False
+    assert finalized_path.exists()
+    assert read_session_payload(finalized_path) == {
+        **build_metadata().model_dump(mode="json"),
+        "ended_at": "2026-11-18T18:31:10Z",
+        "duration_seconds": 64,
+        "scan_count": 0,
+        "unique_bssid_count": 0,
+        "status": "completed",
+        "observations": [],
+    }
+    assert writer.metadata.status == "completed"
+    assert writer.finalized_path == finalized_path
+
+
+def test_finalize_multiple_scans_calculates_counts_and_prevents_further_mutation(tmp_path: Path) -> None:
+    writer = TemporarySessionWriter(tmp_path / "recording-data", build_metadata())
+    first_observation = build_observation(1, ["aa:bb:cc:dd:ee:ff"])
+    second_observation = build_observation(
+        2,
+        ["aa:bb:cc:dd:ee:ff", "11:22:33:44:55:66"],
+    )
+    writer.append(first_observation)
+    writer.append(second_observation)
+
+    finalized_path = writer.finalize(datetime(2026, 11, 18, 18, 32, 5, tzinfo=timezone.utc))
+    payload = read_session_payload(finalized_path)
+
+    assert payload["duration_seconds"] == 119
+    assert payload["scan_count"] == 2
+    assert payload["unique_bssid_count"] == 2
+    assert payload["observations"] == [
+        first_observation.model_dump(mode="json"),
+        second_observation.model_dump(mode="json"),
+    ]
+    with pytest.raises(SessionAlreadyFinalizedError, match="already been finalized"):
+        writer.append(build_observation(3, ["22:33:44:55:66:77"]))
+    with pytest.raises(SessionAlreadyFinalizedError, match="already been finalized"):
+        writer.finalize(datetime(2026, 11, 18, 18, 33, 5, tzinfo=timezone.utc))
+
+
+def test_finalization_failure_preserves_the_existing_recoverable_temporary_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer = TemporarySessionWriter(tmp_path / "recording-data", build_metadata())
+    writer.append(build_observation(1, ["aa:bb:cc:dd:ee:ff"]))
+    temporary_payload = writer.path.read_bytes()
+
+    def fail_publish(self: Path, target: Path) -> Path:
+        raise OSError("simulated final publication failure")
+
+    monkeypatch.setattr(Path, "replace", fail_publish)
+
+    with pytest.raises(OSError, match="simulated final publication failure"):
+        writer.finalize(datetime(2026, 11, 18, 18, 32, 5, tzinfo=timezone.utc))
+
+    assert writer.path.exists()
+    assert writer.path.read_bytes() == temporary_payload
+    assert writer.finalized_path is None
+    assert list(writer.path.parent.glob("*.json.writing")) == []

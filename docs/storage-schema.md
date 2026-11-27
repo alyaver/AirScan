@@ -108,6 +108,14 @@ Temporary files are intentionally retained when the writer stops unexpectedly.
 No live-monitoring code constructs this writer yet, so running the application
 without a future recording workflow still creates no session files.
 
+Calling `TemporarySessionWriter.finalize()` creates finalized metadata with an
+end timestamp, elapsed whole-second duration, persisted scan count, unique BSSID
+count, and final status (normally `completed`). It first writes and synchronizes
+a separate replacement for the completed `.json` filename, then atomically
+publishes that file. Only after publication succeeds does it remove the
+recoverable `.json.tmp` file. A failure before publication leaves the active
+temporary file available for recovery.
+
 ## Session identity and filenames
 
 The backend generates each session ID as a lowercase UUID4 hexadecimal value,
