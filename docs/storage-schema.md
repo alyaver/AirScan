@@ -166,6 +166,22 @@ their canonical JSON representation followed by one newline to
 Validation of pre-existing duplicate master records is deferred to a later
 consistency-reporting task.
 
+## Master/session consistency reporting
+
+`inspect_storage_consistency(data_dir)` is a read-only troubleshooting utility
+that compares valid records in `data/master.jsonl` with finalized `data/sessions`
+`*.json` files. It reports one `SessionConsistency` entry for every session ID
+present in either source, including declared and actual session observation
+counts, master record counts, missing scan IDs in either source, and duplicate
+scan IDs in either source. A master-only session ID has no `session_path` and is
+an orphaned master record set; a finalized session with no master records lists
+all of its scan IDs as missing from the master.
+
+The report also includes master JSONL integrity results and invalid finalized
+session-file issues, rather than silently comparing unreliable data. Active
+`.json.tmp` recovery files are intentionally excluded. The function never
+creates, rewrites, repairs, or deletes storage artifacts.
+
 ## Master JSONL integrity and recovery
 
 `inspect_master_jsonl` reads a master file without changing it. It validates
